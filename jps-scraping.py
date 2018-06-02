@@ -3,12 +3,21 @@
 import requests
 from bs4 import BeautifulSoup
 import json
+import traceback
 
-def create_author_list(author_div):
-    authors_str = [str(a) for a in author_div.contents]
-    #authors_list = ''.join(authors_str).split(',') # 所属が複数の場合に失敗するので保留
-    authors_list = ''.join(authors_str)
-    return authors_list
+
+from jpsscraping import author
+
+def create_author_list(author_div, affi_div):
+    authors_str = ''.join([str(a) for a in author_div.contents])
+    affi_str = ''.join([str(a) for a in affi_div.contents])
+    author_list = author.parse_author(author.create_list(authors_str))
+    affi_dict = author.create_affi_dict(author.create_list(affi_str))
+    au_dict_list = []
+    for au in author_list:
+        au.add_affiliation(affi_dict)
+        au_dict_list.append(au.to_dict())
+    return au_dict_list
 
 def extract_sessions(url, sessions):
     request = requests.get(url)
@@ -31,23 +40,26 @@ def extract_sessions(url, sessions):
                 try:
                     number = cont.find(class_='number').text
                     title = cont.find(class_='title').text
-                    authors = create_author_list(cont.find(class_='au'))
-                    affiliations = create_author_list(cont.find(class_='aff'))
+                    authors = create_author_list(cont.find(class_='au'), cont.find(class_='aff'))
                     talk = {'number': number, 'title': title,
-                    'authors': authors, 'affiliations': affiliations}
+                    'authors': authors}
                     current_session['talks'].append(talk)
                     if authors is None:
                         print(talk)
-                    if affiliations is None:
-                        print(talk)
                 except AttributeError:
-                    talk = {'number': number, 'title': '取消',
-                    'authors': '', 'affiliations': ''}
+                    #traceback.print_exc()
+                    #print(cont)
+                    in_cont = cont.find(class_='in_container').text
+                    talk = {'number': number, 'title': in_cont, 'authors': ''}
                     current_session['talks'].append(talk)
+                except KeyError:
+                    traceback.print_exc()
+                    print(cont.find(class_='au'))
+                    print(cont.find(class_='aff'))
             if class_name == 'break':
                 title = cont.text
                 talk = {'number': '', 'title': title,
-                    'authors': '', 'affiliations': ''}
+                    'authors': ''}
                 current_session['talks'].append(talk)
         if cont.name=='h5':
             current_session['session name'] = cont.text
@@ -74,12 +86,14 @@ fields = {
     '13': '領域13： 物理教育、物理学史、環境物理'
 }
 
+
+
 for field_id, field_name in fields.items():
     url = 'http://w4.gakkai-web.net/jps_search/2018sp/data/html/program' + field_id + '.html'
     print('Processing ' + field_name + '...')
     sessions = {}
     extract_sessions(url, sessions)
-    print(sessions)
+#    print(sessions)
     json_file = open('json/'+field_id+'.json', 'w')
     json.dump(sessions, json_file, ensure_ascii=False, indent=2)
     json_file.close()
